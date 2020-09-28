@@ -1,0 +1,5 @@
+     1                                  entry:
+     2 00000000 EBFE                        jmp $       ; while(1);
+     3                                  
+     4 00000002 00<rep 1FCh>                times 510 - ($ - $$) db 0x00
+     5 000001FE 55AA                        db 0x55, 0xAA
