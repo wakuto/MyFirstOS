@@ -1,0 +1,47 @@
+     1                                      BOOT_LOAD   equ 0x7c00  ; ブートプログラムのロード位置
+     2                                      ORG BOOT_LOAD           ; ロードアドレスをアセンブラに指示
+     3                                  
+     4                                  entry:
+     5 00000000 EB58                        jmp ipl      ; jump to ipl
+     6                                  
+     7                                      ; BPB(BIOS Parameter Block
+     8 00000002 90<rep 58h>                 times 90 - ($ - $$) db 0x90
+     9                                  
+    10                                  
+    11                                      ; IPL(Initial Program Loader)
+    12                                  ipl:
+    13 0000005A FA                          cli         ; clear interrupu flag 割込み禁止
+    14                                  
+    15 0000005B B80000                      mov ax, 0x0000
+    16 0000005E 89C2                        mov dx, ax
+    17 00000060 8EC0                        mov es, ax
+    18 00000062 8ED0                        mov ss, ax
+    19 00000064 BC007C                      mov sp, BOOT_LOAD
+    20                                      
+    21 00000067 FB                          sti         ; set interrupt flag 割り込み許可
+    22                                  
+    23 00000068 8816[9000]                  mov [BOOT.DRIVE], dl    ; ブートドライブの番号(DL)を保存
+    24                                  
+    25 0000006C B90C00                      mov cx, 0x0C
+    26                                  output:
+    27 0000006F BE[8400]                    mov si, .data
+    28 00000072 83C60C                      add si, 0x0C
+    29 00000075 29CE                        sub si, cx
+    30 00000077 8A04                        mov al, [si]
+    31 00000079 B40E                        mov ah, 0x0E    ; テレタイプ式１文字出力
+    32 0000007B BB0000                      mov bx, 0x0000
+    33 0000007E CD10                        int 0x10        ; ビデオBIOSコール
+    34 00000080 E2ED                        loop output
+    35                                  
+    36 00000082 EBFE                        jmp $       ; while(1)
+    37                                  
+    38                                  .data:
+    39 00000084 48656C6C6F20576F72-         db "Hello World"
+    39 0000008D 6C64               
+    40                                  
+    41 0000008F 00                      ALIGN 2, db 0
+    42                                  BOOT:           ; ブートドライブ関係の情報
+    43 00000090 0000                    .DRIVE: dw 0    ; ドライブ番号
+    44                                  
+    45 00000092 00<rep 16Ch>                times 510 - ($ - $$) db 0x00
+    46 000001FE 55AA                        db 0x55, 0xAA

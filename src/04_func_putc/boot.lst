@@ -1,0 +1,76 @@
+     1                                      BOOT_LOAD   equ 0x7c00  ; ブートプログラムのロード位置
+     2                                      ORG BOOT_LOAD           ; ロードアドレスをアセンブラに指示
+     3                                  
+     4                                  ; マクロ
+     5                                  %include "../include/macro.s"   ; C言語と同等の関数呼び出し
+     6                              <1> ; C言語と同等の関数呼び出し
+     7                              <1> %macro cdecl 1-*.nolist ; 可変引数, リスト出力の抑止
+     8                              <1> 
+     9                              <1>     %rep %0 - 1         ; 引数の数-1回
+    10                              <1>         push %{-1:-1}   ; 一番最後の引数
+    11                              <1>         %rotate -1      ; 一番最後の引数を先頭に移動
+    12                              <1>     %endrep
+    13                              <1>     %rotate -1      ; 回転をもとに戻す
+    14                              <1> 
+    15                              <1>     call %1         ; 第１引数を呼び出し
+    16                              <1> 
+    17                              <1>     %if 1 < %0
+    18                              <1>         add sp, (__BITS__ >> 3) * (%0 - 1)  ; cpuのbyte数(bit数/8) * 引数の数-1
+    19                              <1>     %endif
+    20                              <1> %endmacro
+     6                                  
+     7                                  entry:
+     8 00000000 EB58                        jmp ipl      ; jump to ipl
+     9                                  
+    10                                      ; BPB(BIOS Parameter Block
+    11 00000002 90<rep 58h>                 times 90 - ($ - $$) db 0x90
+    12                                  
+    13                                  
+    14                                      ; IPL(Initial Program Loader)
+    15                                  ipl:
+    16 0000005A FA                          cli         ; clear interrupu flag 割込み禁止
+    17                                  
+    18 0000005B B80000                      mov ax, 0x0000
+    19 0000005E 89C2                        mov dx, ax
+    20 00000060 8EC0                        mov es, ax
+    21 00000062 8ED0                        mov ss, ax
+    22 00000064 BC007C                      mov sp, BOOT_LOAD
+    23                                      
+    24 00000067 FB                          sti         ; set interrupt flag 割り込み許可
+    25                                  
+    26 00000068 8816[8600]                  mov [BOOT.DRIVE], dl    ; ブートドライブの番号(DL)を保存
+    27                                  
+    28 0000006C 6A58E8170083C402            cdecl putc, word 'X'
+    29 00000074 6A59E80F0083C402            cdecl putc, word 'Y'
+    30 0000007C 6A5AE8070083C402            cdecl putc, word 'Z'
+    31                                  
+    32 00000084 EBFE                        jmp $       ; while(1)
+    33                                  
+    34                                  ALIGN 2, db 0
+    35                                  BOOT:           ; ブートドライブ関係の情報
+    36 00000086 0000                    .DRIVE: dw 0    ; ドライブ番号
+    37                                  
+    38                                  ; モジュール
+    39                                  %include "../modules/real/putc.s"
+    40                              <1> putc:       ; void putc(ch);
+    41 00000088 55                  <1>     push bp
+    42 00000089 89E5                <1>     mov bp, sp
+    43                              <1> 
+    44 0000008B 50                  <1>     push ax
+    45 0000008C 53                  <1>     push bx
+    46                              <1> 
+    47 0000008D 8A4604              <1>     mov al, [bp + 4]
+    48 00000090 B40E                <1>     mov ah, 0x0E
+    49 00000092 BB0000              <1>     mov bx, 0x0000
+    50 00000095 CD10                <1>     int 0x10
+    51                              <1> 
+    52 00000097 5B                  <1>     pop bx
+    53 00000098 58                  <1>     pop ax
+    54                              <1> 
+    55 00000099 89EC                <1>     mov sp, bp
+    56 0000009B 5D                  <1>     pop bp
+    57                              <1> 
+    58 0000009C C3                  <1>     ret
+    40                                  
+    41 0000009D 00<rep 161h>                times 510 - ($ - $$) db 0x00
+    42 000001FE 55AA                        db 0x55, 0xAA
