@@ -6,7 +6,6 @@ lba_chs:    ; lba_chs(drive, drive_chs, lba);
     push bp
     mov bp, sp
 
-    push ax
     push bx
     push dx
     push si
@@ -42,7 +41,6 @@ lba_chs:    ; lba_chs(drive, drive_chs, lba);
     pop si
     pop dx
     pop bx
-    pop ax
 
     mov sp, bp
     pop bp
