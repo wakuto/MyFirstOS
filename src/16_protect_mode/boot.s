@@ -1,3 +1,14 @@
+; mem map
+; ------------+-------------------------
+; 0x0000_0000 | システム領域
+; ------------+-------------------------
+; 0x0000_7C00 | ブートコード
+; ------------+-------------------------
+; 0x0000_9C00 | カーネル（一次読み込み）
+; ------------+-------------------------
+; 0x0010_1000 | カーネル（最終読み込み）
+; ------------+-------------------------
+
 ; マクロ
 %include "../include/macro.s"   ; C言語と同等の関数呼び出し
 %include "../include/define.s"  ; 各種定数の宣言
@@ -286,6 +297,71 @@ stage_6:
 
 .s0: db "6th stage...", 0x0A, 0x0D, 0x0A, 0x0D
      db " [Push SPACE key to protect mode...]", 0x0A, 0x0D, 0
+
+
+; GLOBAL DISCRIPTOR TABLE
+; セグメントディスクリプタの配列
+ALIGN 4, db 0
+GDT: dq 0x00_0000_000000_0000   ; NULL
+.cs: dq 0x00_CF9A_000000_FFFF   ; CODE 4G
+.ds: dq 0x00_CF92_000000_FFFF   ; DATA 4G
+.gdt_end:
+
+; セレクタ
+SEL_CODE equ GDT.cs - GDT       ; コード用セレクタ
+SEL_DATA equ GDT.ds - GDT       ; データ用セレクタ
+
+; GDT(Global Descriptor Table)
+GDTR: dw GDT.gdt_end - GDT - 1  ; ディスクリプタテーブルのリミット
+      dd GDT                    ; ディスクリプタテーブルのアドレス
+
+; IDT(Interrupt Descriptor Table) 割込み禁止のため
+IDTR: dw 0          ; IDTリミット
+      dd 0          ; IDTアドレス
+
+
+; ブート処理の第７ステージ
+stage_7:
+    cli
+
+    ; ディスクリプタテーブルをロード
+    lgdt [GDTR]                 ; gdtレジスタにグローバルディスクリプタテーブルをロード
+    lidt [IDTR]                 ; ldtレジスタに割り込みディスクリプタテーブルをロード
+
+    ; プロテクトモードに移行
+    mov eax, cr0
+    or ax, 1                     ; cr0レジスタのpe(protect enable)をセット
+    mov cr0, eax
+
+    ; プロテクトモードに移行したのでパイプラインの命令は破棄したい
+    jmp $ + 2                   ; パイプラインのクリア
+
+    ; セグメント間ジャンプ
+[BITS 32]                       ; これ移行32ビットコードを生成
+    DB 0x66                     ; セグメントサイズオーバーライドプレフィックス！！！（かっこいい）
+    jmp SEL_CODE:CODE_32
+
+
+; 32ビットコード開始
+CODE_32:        
+    ; セレクタを初期化
+    ; 各種セグメントレジスタにデータセグメントディスクリプタのオフセットを設定
+    mov ax, SEL_DATA
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
+    mov ss, ax
+
+    ; カーネル部をコピー
+    mov ecx, (KERNEL_SIZE) / 4      ; 4バイトずつコピー
+    mov esi, BOOT_END               ; カーネル部の先頭アドレス(0x0000_9C00)
+    mov edi, KERNEL_LOAD            ; カーネルのロード位置(0x0010_1000)
+    cld                             ; DFクリア（＋方向）
+    rep movsd                       ; while(--ecx) *edi++ = *esi++;
+
+    ; カーネル処理に移行
+    jmp KERNEL_LOAD                 ; カーネルの先頭にジャンプ
 
 ; パディング(このファイルは8kBとする）
     times BOOT_SIZE - ($ - $$) db 0 ; 8kB
