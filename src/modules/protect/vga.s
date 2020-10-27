@@ -57,6 +57,7 @@ vram_font_copy:         ; void vram_font_copy(font, vram, plane, color);
     
     push eax
     push ebx
+    push ecx
     push edx
     push edi
     push esi
@@ -111,6 +112,7 @@ vram_font_copy:         ; void vram_font_copy(font, vram, plane, color);
     pop esi
     pop edi
     pop edx
+    pop ecx
     pop ebx
     pop eax
 
