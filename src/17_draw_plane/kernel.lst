@@ -1,0 +1,126 @@
+     1                                  %include "../include/define.s"
+     2                              <1>     SECT_SIZE equ (512)                     ; セクタサイズ
+     3                              <1> 
+     4                              <1>     BOOT_SIZE equ (1024 * 8)                ; ブートコードサイズ
+     5                              <1>     KERNEL_SIZE equ (1024 * 8)              ; カーネルサイズ
+     6                              <1> 
+     7                              <1>     KERNEL_LOAD equ 0x0010_1000             ; カーネルのロード位置
+     8                              <1> 
+     9                              <1>     E820_RECORD_SIZE equ 20
+    10                              <1> 
+    11                              <1>     BOOT_LOAD equ 0x7C00                    ; ブートプログラムのロード位置
+    12                              <1>     BOOT_END equ (BOOT_LOAD + BOOT_SIZE)    ; ブートコードの終了位置
+    13                              <1> 
+    14                              <1>     BOOT_SECT equ (BOOT_SIZE / SECT_SIZE)   ; ブートコードのセクタ数
+    15                              <1>     KERNEL_SECT equ (KERNEL_SIZE / SECT_SIZE)   ; カーネルのセクタ数
+     2                                  %include "../include/macro.s"
+     3                              <1> ; C言語と同等の関数呼び出し
+     4                              <1> %macro cdecl 1-*.nolist ; 可変引数, リスト出力の抑止
+     5                              <1> 
+     6                              <1>     %rep %0 - 1         ; 引数の数-1回
+     7                              <1>         push %{-1:-1}   ; 一番最後の引数
+     8                              <1>         %rotate -1      ; 一番最後の引数を先頭に移動
+     9                              <1>     %endrep
+    10                              <1>     %rotate -1      ; 回転をもとに戻す
+    11                              <1> 
+    12                              <1>     call %1         ; 第１引数を呼び出し
+    13                              <1> 
+    14                              <1>     %if 1 < %0
+    15                              <1>         add sp, (__BITS__ >> 3) * (%0 - 1)  ; cpuのbyte数(bit数/8) * 引数の数-1
+    16                              <1>     %endif
+    17                              <1> %endmacro
+    18                              <1> 
+    19                              <1> struc drive
+    20 00000000 ????                <1>     .no resw 1      ; ドライブ番号
+    21 00000002 ????                <1>     .cyln resw 1    ; シリンダ
+    22 00000004 ????                <1>     .head resw 1    ; ヘッド
+    23 00000006 ????                <1>     .sect resw 1    ; セクタ
+    24                              <1> endstruc
+     3                                  
+     4                                      ORG KERNEL_LOAD
+     5                                  
+     6                                  [BITS 32]   ; 32bitコードを生成
+     7                                  
+     8                                  ; エントリポイント
+     9                                  kernel:
+    10                                      ; フォントアドレスを取得
+    11 00000000 BE007E0000                  mov esi, BOOT_LOAD + SECT_SIZE  ; 0x7C00 + 512  フォントアドレス
+    12 00000005 0FB706                      movzx eax, word [esi + 0]       ; FONT.seg  セグメント
+    13 00000008 0FB75E02                    movzx ebx, word [esi + 2]       ; FONT.off  オフセット
+    14 0000000C C1E004                      shl eax, 4
+    15 0000000F 01D8                        add eax, ebx
+    16 00000011 A3[D8000000]                mov [FONT_ADR], eax
+    17                                  
+    18                                      ; 8ビットの横線
+    19 00000016 B40F                        mov ah, 0x0F                    ; AH = 書き込みプレーンを指定(Bit:----IRGB)
+    20 00000018 B002                        mov al, 0x02                    ; AL = マップマスクレジスタ（書き込みプレーンを指定）
+    21 0000001A 66BAC403                    mov dx, 0x03C4                  ; DX = シーケンサ制御ポート
+    22 0000001E 66EF                        out dx, ax
+    23                                  
+    24 00000020 C60500000A00FF              mov [0x000A_0000 + 0], byte 0xFF
+    25                                  
+    26 00000027 B404                        mov ah, 0x04                    ; R
+    27 00000029 66EF                        out dx, ax
+    28                                  
+    29 0000002B C60501000A00FF              mov [0x000A_0000 + 1], byte 0xFF
+    30                                  
+    31 00000032 B402                        mov ah, 0x02                    ; G
+    32 00000034 66EF                        out dx, ax
+    33                                  
+    34 00000036 C60502000A00FF              mov [0x000A_0000 + 2], byte 0xFF
+    35                                  
+    36 0000003D B401                        mov ah, 0x01                    ; B
+    37 0000003F 66EF                        out dx, ax
+    38                                  
+    39 00000041 C60503000A00FF              mov [0x000A_0000 + 3], byte 0xFF
+    40                                  
+    41                                      ; 画面を横切る横線
+    42 00000048 B402                        mov ah, 0x02                    ; G
+    43 0000004A 66EF                        out dx, ax
+    44                                  
+    45 0000004C 8D3D50000A00                lea edi, [0x000A_0000 + 80]     ; 2行目のドットから
+    46 00000052 B950000000                  mov ecx, 80                     ; 80byte分(640bit->640pixel->１行)
+    47 00000057 B0FF                        mov al, 0xFF
+    48 00000059 F3AA                        rep stosb                       ; *(EDI++) = AL
+    49                                  
+    50                                      ; 2行目に8ドットの矩形
+    51 0000005B BF01000000                  mov edi, 1                      ; 行数
+    52                                  
+    53                                      ; lea edi, [edi * 1280 + 0xA_0000]
+    54 00000060 C1E708                      shl edi, 8
+    55 00000063 8DBCBF00000A00              lea edi, [edi * 4 + edi + 0xA_0000]
+    56                                  
+    57 0000006A 66C707FF00                  mov [edi + (80 * 0)], word 0xFF
+    58 0000006F 66C74750FF00                mov [edi + (80 * 1)], word 0xFF
+    59 00000075 66C787A0000000FF00          mov [edi + (80 * 2)], word 0xFF
+    60 0000007E 66C787F0000000FF00          mov [edi + (80 * 3)], word 0xFF
+    61 00000087 66C78740010000FF00          mov [edi + (80 * 4)], word 0xFF
+    62 00000090 66C78790010000FF00          mov [edi + (80 * 5)], word 0xFF
+    63 00000099 66C787E0010000FF00          mov [edi + (80 * 6)], word 0xFF
+    64 000000A2 66C78730020000FF00          mov [edi + (80 * 7)], word 0xFF
+    65                                  
+    66                                      ; 3行目に文字を描画
+    67 000000AB BE41000000                  mov esi, 'A'
+    68 000000B0 C1E604                      shl esi, 4
+    69 000000B3 0335[D8000000]              add esi, [FONT_ADR]
+    70                                  
+    71 000000B9 BF02000000                  mov edi, 2                      ; 行数
+    72                                      ; lea edi, [edi * 1280 + 0xA_0000]
+    73 000000BE C1E708                      shl edi, 8
+    74 000000C1 8DBCBF00000A00              lea edi, [edi * 4 + edi + 0xA_0000]
+    75                                  
+    76 000000C8 B910000000                  mov ecx, 16
+    77                                  .10L:
+    78                                      
+    79 000000CD A4                          movsb                   ; *(EDI++) = *(ESI++)
+    80 000000CE 83C74F                      add edi, 80-1           ; 次の行
+    81 000000D1 E2FA                        loop .10L
+    82                                      ; 処理の終了
+    83 000000D3 EBFE                        jmp $
+    84                                  
+    85 000000D5 00<rep 3h>              ALIGN 4, db 0
+    86 000000D8 00000000                FONT_ADR: dd 0
+    87                                  
+    88                                  ;パディング
+    89 000000DC 00<rep 1F24h>               times KERNEL_SIZE - ($ - $$) db 0
+    90                                  
