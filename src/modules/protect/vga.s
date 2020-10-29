@@ -120,3 +120,47 @@ vram_font_copy:         ; void vram_font_copy(font, vram, plane, color);
     pop ebp
 
     ret
+
+vram_bit_copy:         ; void vram_bit_copy(bit, vram, plane, color);
+; bitデータ
+; vram VRAMアドレス
+; plane 出力プレーン（1つのプレーンのみをビットで指定）
+; color 描画色 前景色(--------_----IRGB) I=輝度
+    push ebp
+    mov ebp, esp
+    
+    push eax
+    push ebx
+    push edx
+    push edi
+
+    mov edi, [ebp + 12]         ; vram
+    movzx eax, byte [ebp + 16]  ; plane
+    movzx ebx, word [ebp + 20]  ; color
+    ; bl = 前景色
+
+    ; 常に透過モード
+    test bl, al     ; zf = （前景色 & プレーン）
+    setz bl         ; dl = zf
+    dec bl          ; 前景色が含まれる：dl = 0xFF, 含まれない：dl = 0x00
+
+    ; マスク
+    mov al, [ebp + 8]   ; bit
+    mov ah, al      ; ah ~= al
+    not ah
+
+    and ah, [edi]       ; !出力ビットパターン & 現在値 出力ビットだけ0 背景
+    and al, bl          ;  出力ビットパターン & 表示色 前景
+    or al, ah           ; 背景と前景を合成
+    mov [edi], al       ; プレーンに書き込み
+    
+
+    pop edi
+    pop edx
+    pop ebx
+    pop eax
+
+    mov esp, ebp
+    pop ebp
+
+    ret
