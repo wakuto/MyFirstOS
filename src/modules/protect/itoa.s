@@ -62,7 +62,7 @@ itoa:       ; void itoa(num, buff, size, radix, flag);
     mov ebx, [ebp +20]   ; radix(基数)
 .30L:
     mov edx, 0
-    div ebx      ; 商：eax, あまり: edx
+    div ebx      ; 商：ax, あまり: dx
 
     mov esi, edx
     mov dl, byte [.ascii + esi]
@@ -74,11 +74,12 @@ itoa:       ; void itoa(num, buff, size, radix, flag);
     loopnz .30L
 .30E:
 
-    cmp ecx, 0
+    ; 空欄を埋める
+    cmp ecx, 0  ; 空白なしならgoto .40E
 .40Q:
     je .40E
     mov al, ' '
-    cmp [ebp + 24], word 0b0100
+    cmp [ebp +24], dword 0b0100
 .42Q:
     jne .42E
     mov al, '0'

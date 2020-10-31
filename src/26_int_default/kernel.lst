@@ -1,0 +1,1019 @@
+     1                                  %include "../include/define.s"
+     2                              <1>     SECT_SIZE equ (512)                     ; セクタサイズ
+     3                              <1> 
+     4                              <1>     BOOT_SIZE equ (1024 * 8)                ; ブートコードサイズ
+     5                              <1>     KERNEL_SIZE equ (1024 * 8)              ; カーネルサイズ
+     6                              <1> 
+     7                              <1>     KERNEL_LOAD equ 0x0010_1000             ; カーネルのロード位置
+     8                              <1> 
+     9                              <1>     E820_RECORD_SIZE equ 20
+    10                              <1> 
+    11                              <1>     BOOT_LOAD equ 0x7C00                    ; ブートプログラムのロード位置
+    12                              <1>     BOOT_END equ (BOOT_LOAD + BOOT_SIZE)    ; ブートコードの終了位置
+    13                              <1> 
+    14                              <1>     BOOT_SECT equ (BOOT_SIZE / SECT_SIZE)   ; ブートコードのセクタ数
+    15                              <1>     KERNEL_SECT equ (KERNEL_SIZE / SECT_SIZE)   ; カーネルのセクタ数
+     2                                  %include "../include/macro.s"
+     3                              <1> ; C言語と同等の関数呼び出し
+     4                              <1> %macro cdecl 1-*.nolist ; 可変引数, リスト出力の抑止
+     5                              <1> 
+     6                              <1>     %rep %0 - 1         ; 引数の数-1回
+     7                              <1>         push %{-1:-1}   ; 一番最後の引数
+     8                              <1>         %rotate -1      ; 一番最後の引数を先頭に移動
+     9                              <1>     %endrep
+    10                              <1>     %rotate -1      ; 回転をもとに戻す
+    11                              <1> 
+    12                              <1>     call %1         ; 第１引数を呼び出し
+    13                              <1> 
+    14                              <1>     %if 1 < %0
+    15                              <1>         add sp, (__BITS__ >> 3) * (%0 - 1)  ; cpuのbyte数(bit数/8) * 引数の数-1
+    16                              <1>     %endif
+    17                              <1> %endmacro
+    18                              <1> 
+    19                              <1> struc drive
+    20 00000000 ????                <1>     .no resw 1      ; ドライブ番号
+    21 00000002 ????                <1>     .cyln resw 1    ; シリンダ
+    22 00000004 ????                <1>     .head resw 1    ; ヘッド
+    23 00000006 ????                <1>     .sect resw 1    ; セクタ
+    24                              <1> endstruc
+     3                                  
+     4                                      ORG KERNEL_LOAD
+     5                                  
+     6                                  [BITS 32]   ; 32bitコードを生成
+     7                                  
+     8                                  ; エントリポイント
+     9                                  kernel:
+    10                                      ; フォントアドレスを取得
+    11 00000000 BE007E0000                  mov esi, BOOT_LOAD + SECT_SIZE  ; 0x7C00 + 512  フォントアドレス
+    12 00000005 0FB706                      movzx eax, word [esi + 0]       ; FONT.seg  セグメント
+    13 00000008 0FB75E02                    movzx ebx, word [esi + 2]       ; FONT.off  オフセット
+    14 0000000C C1E004                      shl eax, 4
+    15 0000000F 01D8                        add eax, ebx
+    16 00000011 A3[68000000]                mov [FONT_ADR], eax
+    17                                  
+    18 00000016 6A0D6A3FE8CC010000-         cdecl draw_font, 63, 13         ; フォント一覧表示
+    18 0000001F 6683C408           
+    19 00000023 6A046A3FE84B020000-         cdecl draw_color_bar, 63, 4     ; カラーバーを表示
+    19 0000002C 6683C408           
+    20 00000030 68[56000000]680F01-         cdecl draw_str, 25, 14, 0x010F, .s0 ; 文字の表示
+    20 00000038 00006A0E6A19E8EB01-
+    20 00000041 00006683C410       
+    21                                  
+    22                                      
+    23 00000047 6844332211                  push 0x11223344
+    24 0000004C 9C                          pushf
+    25 0000004D 9A[24070000]0800            call 0x0008:int_default         ; デフォルト割り込み処理の呼び出し
+    26                                  
+    27                                      ; 処理の終了
+    28 00000054 EBFE                        jmp $
+    29                                  
+    30 00000056 2048656C6C6F2C206B-     .s0 db " Hello, kernel! ", 0
+    30 0000005F 65726E656C212000   
+    31                                  
+    32 00000067 00                      ALIGN 4, db 0
+    33 00000068 00000000                FONT_ADR: dd 0
+    34 0000006C 00000000                RTC_TIME: dd 0
+    35                                  
+    36                                  ; モジュール
+    37                                  %include "../modules/protect/vga.s"
+    38                              <1> vga_set_read_plane:     ; void vga_set_read_plane(plane);
+    39                              <1> ; plane: 読み込みプレーン
+    40 00000070 55                  <1>     push ebp
+    41 00000071 89E5                <1>     mov ebp, esp
+    42                              <1> 
+    43 00000073 6650                <1>     push ax
+    44 00000075 6652                <1>     push dx
+    45                              <1> 
+    46                              <1> 
+    47                              <1>     ; 読み込みプレーンの選択
+    48 00000077 8A6508              <1>     mov ah, [ebp + 8]   ; 3=輝度, 2～0=RGB
+    49 0000007A 80E403              <1>     and ah, 0x03        ; 余計なビットをマスク
+    50 0000007D B004                <1>     mov al, 0x04        ; 読み込みマップ選択レジスタ
+    51 0000007F 66BACE03            <1>     mov dx, 0x03CE      ; グラフィックス制御ポート
+    52 00000083 66EF                <1>     out dx, ax
+    53                              <1> 
+    54 00000085 665A                <1>     pop dx
+    55 00000087 6658                <1>     pop ax
+    56                              <1> 
+    57 00000089 89EC                <1>     mov esp, ebp
+    58 0000008B 5D                  <1>     pop ebp
+    59                              <1> 
+    60 0000008C C3                  <1>     ret
+    61                              <1> 
+    62                              <1> vga_set_write_plane:    ; void vga_set_write_plane(plane);
+    63                              <1> ; plane 書き込みプレーン
+    64 0000008D 55                  <1>     push ebp
+    65 0000008E 89E5                <1>     mov ebp, esp
+    66                              <1> 
+    67 00000090 6650                <1>     push ax
+    68 00000092 6652                <1>     push dx
+    69                              <1> 
+    70                              <1> 
+    71                              <1>     ; 書き込みプレーンの選択
+    72 00000094 8A6508              <1>     mov ah, [ebp + 8]   ; ah = 書き込みプレーン
+    73 00000097 80E40F              <1>     and ah, 0x0F        ; 余計なビットをマスク
+    74 0000009A B002                <1>     mov al, 0x02        ; マップマスクレジスタ（書き込みプレーンを指定）
+    75 0000009C 66BAC403            <1>     mov dx, 0x03C4      ; シーケンサ制御ポート
+    76 000000A0 66EF                <1>     out dx, ax
+    77                              <1> 
+    78                              <1> 
+    79 000000A2 665A                <1>     pop dx
+    80 000000A4 6658                <1>     pop ax
+    81                              <1> 
+    82 000000A6 89EC                <1>     mov esp, ebp
+    83 000000A8 5D                  <1>     pop ebp
+    84                              <1> 
+    85 000000A9 C3                  <1>     ret
+    86                              <1> 
+    87                              <1> vram_font_copy:         ; void vram_font_copy(font, vram, plane, color);
+    88                              <1> ; font FONTアドレス
+    89                              <1> ; vram VRAMアドレス
+    90                              <1> ; plane 出力プレーン（1つのプレーンのみをビットで指定）
+    91                              <1> ; color 描画色 背景色(----IRGB):前景色(---TIRGB) T=透過, I=輝度
+    92 000000AA 55                  <1>     push ebp
+    93 000000AB 89E5                <1>     mov ebp, esp
+    94                              <1>     
+    95 000000AD 50                  <1>     push eax
+    96 000000AE 53                  <1>     push ebx
+    97 000000AF 51                  <1>     push ecx
+    98 000000B0 52                  <1>     push edx
+    99 000000B1 57                  <1>     push edi
+   100 000000B2 56                  <1>     push esi
+   101                              <1> 
+   102 000000B3 8B7508              <1>     mov esi, [ebp + 8]          ; font
+   103 000000B6 8B7D0C              <1>     mov edi, [ebp + 12]         ; vram
+   104 000000B9 0FB64510            <1>     movzx eax, byte [ebp + 16]  ; plane
+   105 000000BD 0FB75D14            <1>     movzx ebx, word [ebp + 20]  ; color
+   106                              <1>     ; bh = 背景色 bl = 前景色
+   107                              <1> 
+   108 000000C1 84C7                <1>     test bh, al     ; zf = (背景色 & プレーン）
+   109 000000C3 0F94C6              <1>     setz dh         ; dh = zf
+   110 000000C6 FECE                <1>     dec dh          ; 背景色が含まれる：dh = 0xFF, 含まれない：dh = 0x00
+   111                              <1> 
+   112 000000C8 84C3                <1>     test bl, al     ; zf = （前景色 & プレーン）
+   113 000000CA 0F94C2              <1>     setz dl         ; dl = zf
+   114 000000CD FECA                <1>     dec dl          ; 前景色が含まれる：dl = 0xFF, 含まれない：dl = 0x00
+   115                              <1> 
+   116                              <1>     ; 16ドットフォントのコピー
+   117 000000CF FC                  <1>     cld             ; アドレス加算モード
+   118                              <1> 
+   119 000000D0 B910000000          <1>     mov ecx, 16
+   120                              <1> .10L:
+   121                              <1>     ; フォントマスクの作成
+   122 000000D5 AC                  <1>     lodsb           ; al = *(esi++) // フォントデータ1ビット分
+   123 000000D6 88C4                <1>     mov ah, al      ; ah ~= al      // !フォントデータ
+   124 000000D8 F6D4                <1>     not ah
+   125                              <1> 
+   126                              <1>     ; 前景色
+   127 000000DA 20D0                <1>     and al, dl      ; al = プレーン&前景色ありorなし
+   128                              <1> 
+   129                              <1>     ; 背景色
+   130 000000DC F7C310000000        <1>     test ebx, 0x0010    ; if(透過on) zf = 0; else zf = 1;
+   131 000000E2 7404                <1>     jz .11F
+   132                              <1>     ; 透過on
+   133 000000E4 2227                <1>     and ah, [edi]       ; 現在のデータでフォントデータをマスク
+   134 000000E6 EB02                <1>     jmp .11E
+   135                              <1> .11F:                   ; 透過off
+   136 000000E8 20F4                <1>     and ah, dh          ; if(背景色なし) ah = 0;
+   137                              <1> .11E:
+   138                              <1>     
+   139                              <1>     ; 前景色と背景色を合成
+   140 000000EA 08E0                <1>     or al, ah           ; al = 背景 | 前景
+   141                              <1> 
+   142                              <1>     ; 新しい値を出力
+   143 000000EC 8807                <1>     mov [edi], al
+   144                              <1> 
+   145 000000EE 83C750              <1>     add edi, 80      ; 1行すすめる
+   146 000000F1 E2E2                <1>     loop .10L
+   147                              <1> .10E:
+   148                              <1> 
+   149 000000F3 5E                  <1>     pop esi
+   150 000000F4 5F                  <1>     pop edi
+   151 000000F5 5A                  <1>     pop edx
+   152 000000F6 59                  <1>     pop ecx
+   153 000000F7 5B                  <1>     pop ebx
+   154 000000F8 58                  <1>     pop eax
+   155                              <1> 
+   156 000000F9 89EC                <1>     mov esp, ebp
+   157 000000FB 5D                  <1>     pop ebp
+   158                              <1> 
+   159 000000FC C3                  <1>     ret
+   160                              <1> 
+   161                              <1> vram_bit_copy:         ; void vram_bit_copy(bit, vram, plane, color);
+   162                              <1> ; bitデータ
+   163                              <1> ; vram VRAMアドレス
+   164                              <1> ; plane 出力プレーン（1つのプレーンのみをビットで指定）
+   165                              <1> ; color 描画色 前景色(--------_----IRGB) I=輝度
+   166 000000FD 55                  <1>     push ebp
+   167 000000FE 89E5                <1>     mov ebp, esp
+   168                              <1>     
+   169 00000100 50                  <1>     push eax
+   170 00000101 53                  <1>     push ebx
+   171 00000102 52                  <1>     push edx
+   172 00000103 57                  <1>     push edi
+   173                              <1> 
+   174 00000104 8B7D0C              <1>     mov edi, [ebp + 12]         ; vram
+   175 00000107 0FB64510            <1>     movzx eax, byte [ebp + 16]  ; plane
+   176 0000010B 0FB75D14            <1>     movzx ebx, word [ebp + 20]  ; color
+   177                              <1>     ; bl = 前景色
+   178                              <1> 
+   179                              <1>     ; 常に透過モード
+   180 0000010F 84C3                <1>     test bl, al     ; zf = （前景色 & プレーン）
+   181 00000111 0F94C3              <1>     setz bl         ; dl = zf
+   182 00000114 FECB                <1>     dec bl          ; 前景色が含まれる：dl = 0xFF, 含まれない：dl = 0x00
+   183                              <1> 
+   184                              <1>     ; マスク
+   185 00000116 8A4508              <1>     mov al, [ebp + 8]   ; bit
+   186 00000119 88C4                <1>     mov ah, al      ; ah ~= al
+   187 0000011B F6D4                <1>     not ah
+   188                              <1> 
+   189 0000011D 2227                <1>     and ah, [edi]       ; !出力ビットパターン & 現在値 出力ビットだけ0 背景
+   190 0000011F 20D8                <1>     and al, bl          ;  出力ビットパターン & 表示色 前景
+   191 00000121 08E0                <1>     or al, ah           ; 背景と前景を合成
+   192 00000123 8807                <1>     mov [edi], al       ; プレーンに書き込み
+   193                              <1>     
+   194                              <1> 
+   195 00000125 5F                  <1>     pop edi
+   196 00000126 5A                  <1>     pop edx
+   197 00000127 5B                  <1>     pop ebx
+   198 00000128 58                  <1>     pop eax
+   199                              <1> 
+   200 00000129 89EC                <1>     mov esp, ebp
+   201 0000012B 5D                  <1>     pop ebp
+   202                              <1> 
+   203 0000012C C3                  <1>     ret
+    38                                  %include "../modules/protect/draw_char.s"
+    39                              <1> draw_char:      ; void draw_char(col, row, color, ch);
+    40                              <1> ; col 列（0～79）
+    41                              <1> ; row 行（0～29）
+    42                              <1> ; color 描画色 背景色(----IRGB):前景色(---TIRGB) T=透過, I=輝度
+    43                              <1> ; ch 文字
+    44                              <1> 
+    45 0000012D 55                  <1>     push ebp
+    46 0000012E 89E5                <1>     mov ebp, esp
+    47                              <1> 
+    48 00000130 53                  <1>     push ebx
+    49 00000131 56                  <1>     push esi
+    50 00000132 57                  <1>     push edi
+    51                              <1> 
+    52                              <1>     ; コピー元フォントアドレスを設定
+    53 00000133 0FB67514            <1>     movzx esi, byte [ebp +20]  ; esi = ch
+    54 00000137 C1E604              <1>     shl esi, 4                  ; ch * 16   1文字16バイト
+    55 0000013A 0335[68000000]      <1>     add esi, [FONT_ADR]         ; ESI = フォントアドレス
+    56                              <1> 
+    57                              <1>     ; コピー先アドレスを取得
+    58                              <1>     ; adr = 0xA0000 + (640 / 8 * 16) * y + x
+    59                              <1>     ;               16行(1文字の高さ）  *  縦位置 + 横位置
+    60 00000140 8B7D0C              <1>     mov edi, [ebp +12]                  ; Y
+    61 00000143 C1E708              <1>     shl edi, 8
+    62 00000146 8DBCBF00000A00      <1>     lea edi, [edi * 4 + edi + 0xA0000]  ; Y * 16行
+    63 0000014D 037D08              <1>     add edi, [ebp + 8]                  ; edi += X
+    64                              <1> 
+    65                              <1>     ; 1文字分のフォントを出力
+    66 00000150 0FB75D10            <1>     movzx ebx, word [ebp +16]           ; 表示色
+    67                              <1> 
+    68                              <1>     ; 輝度I
+    69 00000154 6A03E815FFFFFF6683- <1>     cdecl vga_set_read_plane, 0x03      ; 輝度プレーン
+    69 0000015D C404                <1>
+    70 0000015F 6A08E827FFFFFF6683- <1>     cdecl vga_set_write_plane, 0x08     ; 輝度プレーン
+    70 00000168 C404                <1>
+    71 0000016A 536A085756E836FFFF- <1>     cdecl vram_font_copy, esi, edi, 0x08, ebx
+    71 00000173 FF6683C410          <1>
+    72                              <1> 
+    73                              <1>     ; 赤R
+    74 00000178 6A02E8F1FEFFFF6683- <1>     cdecl vga_set_read_plane, 0x02      ; 赤プレーン
+    74 00000181 C404                <1>
+    75 00000183 6A04E803FFFFFF6683- <1>     cdecl vga_set_write_plane, 0x04     ; 赤輝度プレーン
+    75 0000018C C404                <1>
+    76 0000018E 536A045756E812FFFF- <1>     cdecl vram_font_copy, esi, edi, 0x04, ebx
+    76 00000197 FF6683C410          <1>
+    77                              <1> 
+    78                              <1>     ; 緑G
+    79 0000019C 6A01E8CDFEFFFF6683- <1>     cdecl vga_set_read_plane, 0x01      ; 緑プレーン
+    79 000001A5 C404                <1>
+    80 000001A7 6A02E8DFFEFFFF6683- <1>     cdecl vga_set_write_plane, 0x02     ; 緑プレーン
+    80 000001B0 C404                <1>
+    81 000001B2 536A025756E8EEFEFF- <1>     cdecl vram_font_copy, esi, edi, 0x02, ebx
+    81 000001BB FF6683C410          <1>
+    82                              <1> 
+    83                              <1>     ; 青B
+    84 000001C0 6A00E8A9FEFFFF6683- <1>     cdecl vga_set_read_plane, 0x00      ; 青プレーン
+    84 000001C9 C404                <1>
+    85 000001CB 6A01E8BBFEFFFF6683- <1>     cdecl vga_set_write_plane, 0x01     ; 青プレーン
+    85 000001D4 C404                <1>
+    86 000001D6 536A015756E8CAFEFF- <1>     cdecl vram_font_copy, esi, edi, 0x01, ebx
+    86 000001DF FF6683C410          <1>
+    87                              <1> 
+    88 000001E4 5F                  <1>     pop edi
+    89 000001E5 5E                  <1>     pop esi
+    90 000001E6 5B                  <1>     pop ebx
+    91                              <1> 
+    92 000001E7 89EC                <1>     mov esp, ebp
+    93 000001E9 5D                  <1>     pop ebp
+    94                              <1> 
+    95 000001EA C3                  <1>     ret
+    39                                  %include "../modules/protect/draw_font.s"
+    40                              <1> draw_font:  ; void draw_font(col, row);
+    41                              <1> ; col 列
+    42                              <1> ; row 行
+    43 000001EB 55                  <1>     push ebp
+    44 000001EC 89E5                <1>     mov ebp, esp
+    45                              <1> 
+    46 000001EE 50                  <1>     push eax
+    47 000001EF 53                  <1>     push ebx
+    48 000001F0 51                  <1>     push ecx
+    49 000001F1 57                  <1>     push edi
+    50 000001F2 56                  <1>     push esi
+    51                              <1> 
+    52                              <1> 
+    53 000001F3 8B7508              <1>     mov esi, [ebp + 8]  ; x
+    54 000001F6 8B7D0C              <1>     mov edi, [ebp +12]  ; y
+    55                              <1> 
+    56 000001F9 B900000000          <1>     mov ecx, 0
+    57                              <1> .10L:
+    58 000001FE 81F900010000        <1>     cmp ecx, 256
+    59 00000204 731F                <1>     jae .10E
+    60                              <1> 
+    61 00000206 89C8                <1>     mov eax, ecx
+    62 00000208 83E00F              <1>     and eax, 0x0F   ; eax = 繰り返し回数の下位4ビット
+    63 0000020B 01F0                <1>     add eax, esi    ; eax += x
+    64                              <1> 
+    65 0000020D 89CB                <1>     mov ebx, ecx
+    66 0000020F C1EB04              <1>     shr ebx, 4      ; eax = 繰り返し回数/16
+    67 00000212 01FB                <1>     add ebx, edi    ; ebx += y
+    68                              <1> 
+    69 00000214 516A075350E80FFFFF- <1>     cdecl draw_char, eax, ebx, 0x07, ecx
+    69 0000021D FF6683C410          <1>
+    70                              <1> 
+    71 00000222 41                  <1>     inc ecx
+    72 00000223 EBD9                <1>     jmp .10L
+    73                              <1> .10E:
+    74                              <1> 
+    75 00000225 5E                  <1>     pop esi
+    76 00000226 5F                  <1>     pop edi
+    77 00000227 59                  <1>     pop ecx
+    78 00000228 5B                  <1>     pop ebx
+    79 00000229 58                  <1>     pop eax
+    80                              <1> 
+    81 0000022A 89EC                <1>     mov esp, ebp
+    82 0000022C 5D                  <1>     pop ebp
+    83                              <1> 
+    84 0000022D C3                  <1>     ret
+    40                                  %include "../modules/protect/draw_str.s"
+    41                              <1> draw_str:   ;void draw_str(col, row, color, p);
+    42                              <1> ; col: 列
+    43                              <1> ; row: 行
+    44                              <1> ; color: 描画色
+    45                              <1> ; p: 文字列のアドレス
+    46 0000022E 55                  <1>     push ebp
+    47 0000022F 89E5                <1>     mov ebp, esp
+    48                              <1> 
+    49 00000231 50                  <1>     push eax
+    50 00000232 53                  <1>     push ebx
+    51 00000233 51                  <1>     push ecx
+    52 00000234 52                  <1>     push edx
+    53 00000235 56                  <1>     push esi
+    54                              <1> 
+    55                              <1> 
+    56 00000236 8B4D08              <1>     mov ecx, [ebp + 8]  ; col
+    57 00000239 8B550C              <1>     mov edx, [ebp +12]  ; row
+    58 0000023C 0FB75D10            <1>     movzx ebx, word [ebp + 16] ; color
+    59 00000240 8B7514              <1>     mov esi, [ebp +20]  ; p
+    60                              <1> 
+    61 00000243 FC                  <1>     cld
+    62                              <1> .10L:
+    63 00000244 AC                  <1>     lodsb
+    64 00000245 3C00                <1>     cmp al, 0
+    65 00000247 7425                <1>     je .10E
+    66                              <1> 
+    67 00000249 50535251E8DBFEFFFF- <1>     cdecl draw_char, ecx, edx, ebx, eax
+    67 00000252 6683C410            <1>
+    68                              <1> 
+    69 00000256 41                  <1>     inc ecx
+    70 00000257 83F950              <1>     cmp ecx, 80
+    71 0000025A 7C10                <1>     jl .12E         ; 横はみ出してなければgoto .12E
+    72 0000025C B900000000          <1>     mov ecx, 0      ; はみ出してれば次の行へ
+    73 00000261 42                  <1>     inc edx
+    74 00000262 83FA1E              <1>     cmp edx, 30
+    75 00000265 7C05                <1>     jl .12E         ; 縦はみ出してなければgoto .12E
+    76 00000267 BA00000000          <1>     mov edx, 0      ; はみ出してれば左上に戻る
+    77                              <1> .12E:
+    78 0000026C EBD6                <1>     jmp .10L
+    79                              <1> .10E:
+    80                              <1> 
+    81 0000026E 5E                  <1>     pop esi
+    82 0000026F 5A                  <1>     pop edx
+    83 00000270 59                  <1>     pop ecx
+    84 00000271 5B                  <1>     pop ebx
+    85 00000272 58                  <1>     pop eax
+    86                              <1> 
+    87 00000273 89EC                <1>     mov esp, ebp
+    88 00000275 5D                  <1>     pop ebp
+    89                              <1> 
+    90 00000276 C3                  <1>     ret
+    41                                  %include "../modules/protect/draw_color_bar.s"
+    42                              <1> draw_color_bar:     ; void draw_color_bar(col, row);
+    43                              <1> ; col: 列
+    44                              <1> ; row: 行
+    45 00000277 55                  <1>     push ebp
+    46 00000278 89E5                <1>     mov ebp, esp
+    47                              <1> 
+    48 0000027A 50                  <1>     push eax
+    49 0000027B 53                  <1>     push ebx
+    50 0000027C 51                  <1>     push ecx
+    51 0000027D 52                  <1>     push edx
+    52 0000027E 56                  <1>     push esi
+    53 0000027F 57                  <1>     push edi
+    54                              <1> 
+    55                              <1> 
+    56 00000280 8B7508              <1>     mov esi, [ebp + 8]      ; x
+    57 00000283 8B7D0C              <1>     mov edi, [ebp +12]      ; y
+    58                              <1> 
+    59                              <1>     ; カラーバーを表示
+    60 00000286 B900000000          <1>     mov ecx, 0
+    61                              <1> .10L:
+    62 0000028B 83F910              <1>     cmp ecx, 16
+    63 0000028E 732E                <1>     jae .10E
+    64                              <1> 
+    65                              <1>     ; 一回で8文字
+    66 00000290 89C8                <1>     mov eax, ecx
+    67 00000292 83E001              <1>     and eax, 0x01
+    68 00000295 C1E003              <1>     shl eax, 3
+    69 00000298 01F0                <1>     add eax, esi    ; col
+    70                              <1> 
+    71                              <1>     ; 2回に1回改行
+    72 0000029A 89CB                <1>     mov ebx, ecx
+    73 0000029C D1EB                <1>     shr ebx, 1
+    74 0000029E 01FB                <1>     add ebx, edi    ; row
+    75                              <1> 
+    76                              <1>     ; 背景色を2色見たら下位次の行
+    77 000002A0 89CA                <1>     mov edx, ecx
+    78 000002A2 D1E2                <1>     shl edx, 1
+    79 000002A4 8B92[D1020000]      <1>     mov edx, [.t0 + edx]    ; color
+    80                              <1> 
+    81 000002AA 68[C8020000]525350- <1>     cdecl draw_str, eax, ebx, edx, .s0
+    81 000002B2 E877FFFFFF6683C410  <1>
+    82                              <1> 
+    83 000002BB 41                  <1>     inc ecx
+    84 000002BC EBCD                <1>     jmp .10L
+    85                              <1> .10E:
+    86                              <1> 
+    87 000002BE 5F                  <1>     pop edi
+    88 000002BF 5E                  <1>     pop esi
+    89 000002C0 5A                  <1>     pop edx
+    90 000002C1 59                  <1>     pop ecx
+    91 000002C2 5B                  <1>     pop ebx
+    92 000002C3 58                  <1>     pop eax
+    93                              <1> 
+    94 000002C4 89EC                <1>     mov esp, ebp
+    95 000002C6 5D                  <1>     pop ebp
+    96                              <1> 
+    97 000002C7 C3                  <1>     ret
+    98                              <1> 
+    99                              <1> 
+   100 000002C8 202020202020202000  <1> .s0: db '        ', 0
+   101                              <1> 
+   102                              <1> .t0:
+   103 000002D1 00000008            <1>     dw 0x0000, 0x0800
+   104 000002D5 00010009            <1>     dw 0x0100, 0x0900
+   105 000002D9 0002000A            <1>     dw 0x0200, 0x0A00
+   106 000002DD 0003000B            <1>     dw 0x0300, 0x0B00
+   107 000002E1 0004000C            <1>     dw 0x0400, 0x0C00
+   108 000002E5 0005000D            <1>     dw 0x0500, 0x0D00
+   109 000002E9 0006000E            <1>     dw 0x0600, 0x0E00
+   110 000002ED 0007000F            <1>     dw 0x0700, 0x0F00
+    42                                  %include "../modules/protect/draw_pixel.s"
+    43                              <1> draw_pixel:     ; void draw_pixel(x, y, color);
+    44                              <1> ; x: X座標
+    45                              <1> ; y: Y座標
+    46                              <1> ; color: 描画色
+    47 000002F1 55                  <1>     push ebp
+    48 000002F2 89E5                <1>     mov ebp, esp
+    49                              <1> 
+    50 000002F4 50                  <1>     push eax
+    51 000002F5 53                  <1>     push ebx
+    52 000002F6 51                  <1>     push ecx
+    53 000002F7 57                  <1>     push edi
+    54                              <1> 
+    55                              <1> 
+    56                              <1> 
+    57                              <1>     ; y座標*80->y*(640/8)
+    58 000002F8 8B7D0C              <1>     mov edi, [ebp +12]
+    59 000002FB C1E704              <1>     shl edi, 4
+    60 000002FE 8DBCBF00000A00      <1>     lea edi, [edi * 4 + edi + 0x0A_0000]
+    61                              <1> 
+    62                              <1>     ; x座標/8  8pixel単位の位置
+    63 00000305 8B5D08              <1>     mov ebx, [ebp + 8]
+    64 00000308 89D9                <1>     mov ecx, ebx
+    65 0000030A C1EB03              <1>     shr ebx, 3
+    66 0000030D 01DF                <1>     add edi, ebx
+    67                              <1> 
+    68                              <1>     ; x座標を8で割った余りからビット位置を計算
+    69                              <1>     ; 8pixel中の位置
+    70                              <1>     ; 0=0b1000_0000, 1=0b0100_0000, ... , 7=0b0000_0001
+    71 0000030F 83E107              <1>     and ecx, 0x07   ; 下位3ビットは8で割ったときの余り
+    72 00000312 BB80000000          <1>     mov ebx, 0x80
+    73 00000317 D3EB                <1>     shr ebx, cl
+    74                              <1> 
+    75 00000319 8B4D10              <1>     mov ecx, [ebp +16]
+    76                              <1> 
+    77                              <1>     ; プレーンごとに出力
+    78 0000031C 6A03E84DFDFFFF6683- <1>     cdecl vga_set_read_plane, 0x03              ; 輝度（I）プレーンを選択
+    78 00000325 C404                <1>
+    79 00000327 6A08E85FFDFFFF6683- <1>     cdecl vga_set_write_plane, 0x08             ; 輝度（I）プレーンを選択
+    79 00000330 C404                <1>
+    80 00000332 516A085753E8C1FDFF- <1>     cdecl vram_bit_copy, ebx, edi, 0x08, ecx 
+    80 0000033B FF6683C410          <1>
+    81                              <1> 
+    82 00000340 6A02E829FDFFFF6683- <1>     cdecl vga_set_read_plane, 0x02              ; Rプレーンを選択
+    82 00000349 C404                <1>
+    83 0000034B 6A04E83BFDFFFF6683- <1>     cdecl vga_set_write_plane, 0x04             ; Rプレーンを選択
+    83 00000354 C404                <1>
+    84 00000356 516A045753E89DFDFF- <1>     cdecl vram_bit_copy, ebx, edi, 0x04, ecx 
+    84 0000035F FF6683C410          <1>
+    85                              <1> 
+    86 00000364 6A01E805FDFFFF6683- <1>     cdecl vga_set_read_plane, 0x01              ; Gプレーンを選択
+    86 0000036D C404                <1>
+    87 0000036F 6A02E817FDFFFF6683- <1>     cdecl vga_set_write_plane, 0x02             ; Gプレーンを選択
+    87 00000378 C404                <1>
+    88 0000037A 516A025753E879FDFF- <1>     cdecl vram_bit_copy, ebx, edi, 0x02, ecx 
+    88 00000383 FF6683C410          <1>
+    89                              <1> 
+    90 00000388 6A00E8E1FCFFFF6683- <1>     cdecl vga_set_read_plane, 0x00              ; Bプレーンを選択
+    90 00000391 C404                <1>
+    91 00000393 6A01E8F3FCFFFF6683- <1>     cdecl vga_set_write_plane, 0x01             ; Bプレーンを選択
+    91 0000039C C404                <1>
+    92 0000039E 516A015753E855FDFF- <1>     cdecl vram_bit_copy, ebx, edi, 0x01, ecx 
+    92 000003A7 FF6683C410          <1>
+    93                              <1> 
+    94 000003AC 5F                  <1>     pop edi
+    95 000003AD 59                  <1>     pop ecx
+    96 000003AE 5B                  <1>     pop ebx
+    97 000003AF 58                  <1>     pop eax
+    98                              <1> 
+    99 000003B0 89EC                <1>     mov esp, ebp
+   100 000003B2 5D                  <1>     pop ebp
+   101                              <1> 
+   102 000003B3 C3                  <1>     ret
+    43                                  %include "../modules/protect/draw_line.s"
+    44                              <1> draw_line:  ; void draw_line(X0, Y0, X1, Y1, color);
+    45                              <1> ; X0 始点のＸ座標
+    46                              <1> ; Y0 始点のＹ座標
+    47                              <1> ; X1 終点のX座標
+    48                              <1> ; Y1 終点のY座標
+    49                              <1> ; color 描画色
+    50 000003B4 55                  <1>     push ebp        ; EBP+ 4| EIP(戻り番地)
+    51 000003B5 89E5                <1>     mov ebp, esp    ; EBP+ 0| EBP(元の値)
+    52                              <1>                     ; ----------------
+    53 000003B7 6A00                <1>     push dword 0    ;    - 4| sum   = 0
+    54 000003B9 6A00                <1>     push dword 0    ;    - 8| x0    = 0
+    55 000003BB 6A00                <1>     push dword 0    ;    -12| dx    = 0
+    56 000003BD 6A00                <1>     push dword 0    ;    -16| inc_x = 0
+    57 000003BF 6A00                <1>     push dword 0    ;    -20| y0    = 0
+    58 000003C1 6A00                <1>     push dword 0    ;    -24| dy    = 0
+    59 000003C3 6A00                <1>     push dword 0    ;    -28| inc_y = 0
+    60                              <1> 
+    61 000003C5 50                  <1>     push eax        ;    -32| eax
+    62 000003C6 53                  <1>     push ebx        ;    -36| ebx
+    63 000003C7 51                  <1>     push ecx        ;    -40| ecx
+    64 000003C8 52                  <1>     push edx        ;    -44| edx
+    65 000003C9 56                  <1>     push esi        ;    -48| esi
+    66 000003CA 57                  <1>     push edi        ;    -52| edi
+    67                              <1>     ; espはebp-52?
+    68                              <1> 
+    69                              <1>     ; x0とx1の距離を計算
+    70 000003CB 8B4508              <1>     mov eax, [ebp + 8]
+    71 000003CE 8B5D10              <1>     mov ebx, [ebp +16]
+    72 000003D1 29C3                <1>     sub ebx, eax
+    73 000003D3 7D09                <1>     jge .10F
+    74                              <1> 
+    75 000003D5 F7DB                <1>     neg ebx
+    76 000003D7 BEFFFFFFFF          <1>     mov esi, -1
+    77 000003DC EB05                <1>     jmp .10E
+    78                              <1> .10F:
+    79 000003DE BE01000000          <1>     mov esi, 1
+    80                              <1> .10E:
+    81                              <1>     
+    82                              <1>     ; y0とy1の距離を計算
+    83 000003E3 8B4D0C              <1>     mov ecx, [ebp +12]
+    84 000003E6 8B5514              <1>     mov edx, [ebp +20]
+    85 000003E9 29CA                <1>     sub edx, ecx
+    86 000003EB 7D09                <1>     jge .20F
+    87                              <1> 
+    88 000003ED F7DA                <1>     neg edx
+    89 000003EF BFFFFFFFFF          <1>     mov edi, -1
+    90 000003F4 EB05                <1>     jmp .20E
+    91                              <1> .20F:
+    92 000003F6 BF01000000          <1>     mov edi, 1
+    93                              <1> .20E:
+    94                              <1>     
+    95                              <1>     ; x軸
+    96 000003FB 8945F8              <1>     mov [ebp - 8], eax  ; 開始座標
+    97 000003FE 895DF4              <1>     mov [ebp -12], ebx  ; 描画幅
+    98 00000401 8975F0              <1>     mov [ebp -16], esi  ; 増分(基準軸:1 or -1)
+    99                              <1> 
+   100                              <1>     ; y軸
+   101 00000404 894DEC              <1>     mov [ebp -20], ecx  ; 開始座標
+   102 00000407 8955E8              <1>     mov [ebp -24], edx  ; 描画幅
+   103 0000040A 897DE4              <1>     mov [ebp -28], edi  ; 増分(基準軸:1 or -1)
+   104                              <1> 
+   105                              <1> 
+   106                              <1>     ; 基準軸を決める
+   107 0000040D 39D3                <1>     cmp ebx, edx
+   108 0000040F 7F08                <1>     jg .22F
+   109                              <1>     
+   110 00000411 8D75EC              <1>     lea esi, [ebp -20]  ; Yが基準軸
+   111 00000414 8D7DF8              <1>     lea edi, [ebp - 8]
+   112                              <1> 
+   113 00000417 EB06                <1>     jmp .22E
+   114                              <1> .22F:
+   115                              <1>     
+   116 00000419 8D75F8              <1>     lea esi, [ebp - 8]  ; Xが基準軸
+   117 0000041C 8D7DEC              <1>     lea edi, [ebp -20]
+   118                              <1> .22E:
+   119                              <1> 
+   120                              <1> ; 基準軸 esi
+   121                              <1> ; 相対軸 edi
+   122                              <1> 
+   123                              <1>     ; 繰り返し回数（基準軸のドット数）
+   124 0000041F 8B4EFC              <1>     mov ecx, [esi - 4]
+   125 00000422 83F900              <1>     cmp ecx, 0
+   126 00000425 7505                <1>     jnz .30E
+   127 00000427 B901000000          <1>     mov ecx, 1          ; if(基準軸の描画幅 == 0) 基準軸の描画幅 = 1
+   128                              <1> .30E:
+   129                              <1> 
+   130                              <1>     ; 線を描画
+   131                              <1> .50L:
+   132                              <1> 
+   133 0000042C FF7518FF75ECFF75F8- <1>     cdecl draw_pixel, dword [ebp - 8],                       dword [ebp -20],                       dword [ebp +24]
+   133 00000435 E8B7FEFFFF6683C40C  <1>
+   136                              <1> 
+   137                              <1>     ; 座標更新
+   138                              <1> 
+   139                              <1>     ; 基準軸の更新
+   140 0000043E 8B46F8              <1>     mov eax, [esi - 8]
+   141 00000441 0106                <1>     add [esi - 0], eax  ; 基準軸開始座標 += 基準軸増分(1 or -1)
+   142                              <1> 
+   143                              <1>     ; 相対軸の更新
+   144 00000443 8B45FC              <1>     mov eax, [ebp - 4]  ; 相対軸の今まで描画したピクセル数
+   145 00000446 0347FC              <1>     add eax, [edi - 4]  ;           += 増分
+   146                              <1> 
+   147 00000449 8B5EFC              <1>     mov ebx, [esi - 4]  ; 基準軸の描画幅
+   148                              <1> 
+   149 0000044C 39D8                <1>     cmp eax, ebx        ; if(積算 < 基準軸の描画幅) goto .52E
+   150 0000044E 7C07                <1>     jl .52E
+   151 00000450 29D8                <1>     sub eax, ebx        ; 積算 -= 描画幅
+   152                              <1> 
+   153 00000452 8B5FF8              <1>     mov ebx, [edi - 8]
+   154 00000455 011F                <1>     add [edi - 0], ebx  ; 相対軸の座標 += 相対軸増分
+   155                              <1> .52E:
+   156                              <1>     
+   157 00000457 8945FC              <1>     mov [ebp - 4], eax  ; 積算値を更新
+   158                              <1> 
+   159 0000045A E2D0                <1>     loop .50L
+   160                              <1> .50E:
+   161                              <1> 
+   162                              <1> 
+   163 0000045C 5F                  <1>     pop edi
+   164 0000045D 5E                  <1>     pop esi
+   165 0000045E 5A                  <1>     pop edx
+   166 0000045F 59                  <1>     pop ecx
+   167 00000460 5B                  <1>     pop ebx
+   168 00000461 58                  <1>     pop eax
+   169                              <1>     ; espはebp-28?
+   170                              <1> 
+   171                              <1>     ; ↓これいらないの？
+   172                              <1>     ; pop (tmp_reg)
+   173                              <1>     ; pop (tmp_reg)
+   174                              <1>     ; pop (tmp_reg)
+   175                              <1>     ; pop (tmp_reg)
+   176                              <1>     ; pop (tmp_reg)
+   177                              <1>     ; pop (tmp_reg)
+   178                              <1>     ; pop (tmp_reg)
+   179                              <1>     ; もしくはsub esp, 56とか？
+   180                              <1> 
+   181                              <1>     ; espはebp?
+   182 00000462 89EC                <1>     mov esp, ebp
+   183 00000464 5D                  <1>     pop ebp
+   184                              <1> 
+   185 00000465 C3                  <1>     ret
+    44                                  %include "../modules/protect/draw_rect.s"
+    45                              <1> draw_rect:  ; void draw_rect(x0, y0, x1, y1, color);
+    46 00000466 55                  <1>     push ebp
+    47 00000467 89E5                <1>     mov ebp, esp
+    48                              <1>     
+    49 00000469 50                  <1>     push eax
+    50 0000046A 53                  <1>     push ebx
+    51 0000046B 51                  <1>     push ecx
+    52 0000046C 52                  <1>     push edx
+    53 0000046D 56                  <1>     push esi
+    54                              <1> 
+    55 0000046E 8B4508              <1>     mov eax, [ebp + 8]  ; x0
+    56 00000471 8B5D0C              <1>     mov ebx, [ebp +12]  ; y0
+    57 00000474 8B4D10              <1>     mov ecx, [ebp +16]  ; x1
+    58 00000477 8B5514              <1>     mov edx, [ebp +20]  ; y1
+    59 0000047A 8B7518              <1>     mov esi, [ebp +24]  ; color
+    60                              <1> 
+    61                              <1>     ; 左上(x0, y0) 右下(x1, y1)にする
+    62 0000047D 39C8                <1>     cmp eax, ecx
+    63 0000047F 7C01                <1>     jl .10E
+    64 00000481 91                  <1>     xchg eax, ecx
+    65                              <1> .10E:
+    66 00000482 39D3                <1>     cmp ebx, edx
+    67 00000484 7C02                <1>     jl .20E
+    68 00000486 87DA                <1>     xchg ebx, edx
+    69                              <1> .20E:
+    70                              <1> 
+    71                              <1>     ; 矩形を描画
+    72 00000488 5653515350E822FFFF- <1>     cdecl draw_line, eax, ebx, ecx, ebx, esi    ; 上線
+    72 00000491 FF6683C414          <1>
+    73 00000496 5652505350E814FFFF- <1>     cdecl draw_line, eax, ebx, eax, edx, esi    ; 左線
+    73 0000049F FF6683C414          <1>
+    74                              <1> 
+    75 000004A4 4A                  <1>     dec edx
+    76 000004A5 5652515250E805FFFF- <1>     cdecl draw_line, eax, edx, ecx, edx, esi    ; 下線（1ドット上）
+    76 000004AE FF6683C414          <1>
+    77 000004B3 42                  <1>     inc edx
+    78                              <1> 
+    79 000004B4 49                  <1>     dec ecx
+    80 000004B5 5652515351E8F5FEFF- <1>     cdecl draw_line, ecx, ebx, ecx, edx, esi    ; 右線（1ドット左）
+    80 000004BE FF6683C414          <1>
+    81                              <1> 
+    82 000004C3 5E                  <1>     pop esi
+    83 000004C4 5A                  <1>     pop edx
+    84 000004C5 59                  <1>     pop ecx
+    85 000004C6 5B                  <1>     pop ebx
+    86 000004C7 58                  <1>     pop eax
+    87                              <1>     
+    88 000004C8 89EC                <1>     mov esp, ebp
+    89 000004CA 5D                  <1>     pop ebp
+    90                              <1> 
+    91 000004CB C3                  <1>     ret
+    45                                  %include "../modules/protect/itoa.s"
+    46                              <1> itoa:       ; void itoa(num, buff, size, radix, flag);
+    47                              <1> ; num   変換する値
+    48                              <1> ; buff  保存先バッファアドレス
+    49                              <1> ; size  保存先バッファサイズ
+    50                              <1> ; radix 基数（2, 8, 10, 16)
+    51                              <1> ; flags 
+    52                              <1> ;   B2: 空白を'0'で埋める
+    53                              <1> ;   B1: '+/-'記号を付加する
+    54                              <1> ;   B0: 値を符号付き変数として扱う
+    55                              <1> 
+    56 000004CC 55                  <1>     push ebp
+    57 000004CD 89E5                <1>     mov ebp, esp
+    58                              <1> 
+    59 000004CF 50                  <1>     push eax
+    60 000004D0 53                  <1>     push ebx
+    61 000004D1 51                  <1>     push ecx
+    62 000004D2 52                  <1>     push edx
+    63 000004D3 56                  <1>     push esi
+    64 000004D4 57                  <1>     push edi
+    65                              <1> 
+    66                              <1> 
+    67                              <1>     ; 引数取得
+    68 000004D5 8B4508              <1>     mov eax, [ebp + 8]    ; num
+    69 000004D8 8B750C              <1>     mov esi, [ebp +12]    ; size
+    70 000004DB 8B4D10              <1>     mov ecx, [ebp +16]    ; buff
+    71                              <1> 
+    72 000004DE 89F7                <1>     mov edi, esi
+    73 000004E0 01CF                <1>     add edi, ecx
+    74 000004E2 4F                  <1>     dec edi              ; edi = &esi[ecx-1]
+    75                              <1> 
+    76 000004E3 8B5D18              <1>     mov ebx, [ebp +24]   ; flags
+    77                              <1> 
+    78                              <1>     ; 符号付き判定
+    79 000004E6 F7C301000000        <1>     test ebx, 0b0001     ; 論理積を計算、0ならZFをセット
+    80                              <1> .10Q:
+    81 000004EC 7408                <1>     je .10E         ; E=Exit
+    82 000004EE 83F800              <1>     cmp eax, 0
+    83                              <1> .12Q:
+    84 000004F1 7D03                <1>     jge .12E
+    85 000004F3 83CB02              <1>     or ebx, 0b0010
+    86                              <1> .12E:
+    87                              <1> .10E:
+    88                              <1> 
+    89                              <1>     ; 符号出力判定
+    90 000004F6 F7C302000000        <1>     test ebx, 0b0010
+    91                              <1> .20Q:
+    92 000004FC 7410                <1>     je .20E
+    93 000004FE 83F800              <1>     cmp eax, 0
+    94                              <1> .22Q:
+    95 00000501 7D07                <1>     jge .22F
+    96 00000503 F7D8                <1>     neg eax
+    97 00000505 C6062D              <1>     mov [esi], byte '-'
+    98 00000508 EB03                <1>     jmp .22E
+    99                              <1> .22F:
+   100                              <1>     
+   101 0000050A C6062B              <1>     mov [esi], byte '+'
+   102                              <1> .22E:
+   103 0000050D 49                  <1>     dec ecx
+   104                              <1> .20E:
+   105                              <1> 
+   106                              <1>     ; ASCII変換
+   107 0000050E 8B5D14              <1>     mov ebx, [ebp +20]   ; radix(基数)
+   108                              <1> .30L:
+   109 00000511 BA00000000          <1>     mov edx, 0
+   110 00000516 F7F3                <1>     div ebx      ; 商：ax, あまり: dx
+   111                              <1> 
+   112 00000518 89D6                <1>     mov esi, edx
+   113 0000051A 8A96[44050000]      <1>     mov dl, byte [.ascii + esi]
+   114                              <1> 
+   115 00000520 8817                <1>     mov [edi], dl
+   116 00000522 4F                  <1>     dec edi
+   117                              <1> 
+   118 00000523 83F800              <1>     cmp eax, 0
+   119 00000526 E0E9                <1>     loopnz .30L
+   120                              <1> .30E:
+   121                              <1> 
+   122                              <1>     ; 空欄を埋める
+   123 00000528 83F900              <1>     cmp ecx, 0  ; 空白なしならgoto .40E
+   124                              <1> .40Q:
+   125 0000052B 740D                <1>     je .40E
+   126 0000052D B020                <1>     mov al, ' '
+   127 0000052F 837D1804            <1>     cmp [ebp +24], dword 0b0100
+   128                              <1> .42Q:
+   129 00000533 7502                <1>     jne .42E
+   130 00000535 B030                <1>     mov al, '0'
+   131                              <1> .42E:
+   132 00000537 FD                  <1>     std         ; dimention flag = 1(-方向)
+   133 00000538 F3AA                <1>     rep stosb   ; while (--ecx) *edi-- = al;
+   134                              <1> .40E:
+   135                              <1> 
+   136 0000053A 5F                  <1>     pop edi
+   137 0000053B 5E                  <1>     pop esi
+   138 0000053C 5A                  <1>     pop edx
+   139 0000053D 59                  <1>     pop ecx
+   140 0000053E 5B                  <1>     pop ebx
+   141 0000053F 58                  <1>     pop eax
+   142                              <1> 
+   143 00000540 89EC                <1>     mov esp, ebp
+   144 00000542 5D                  <1>     pop ebp
+   145                              <1> 
+   146 00000543 C3                  <1>     ret
+   147                              <1> 
+   148 00000544 303132333435363738- <1> .ascii db "0123456789ABCDEF"    ; 変換テーブル
+   148 0000054D 39414243444546      <1>
+    46                                  %include "../modules/protect/rtc.s"
+    47                              <1> rtc_get_time:   ; int rtc_get_time(dst);
+    48                              <1> ; dst: 保存先アドレス
+    49                              <1> ; 戻り値: 成功(0以外)、失敗(0)
+    50 00000554 55                  <1>     push ebp
+    51 00000555 89E5                <1>     mov ebp, esp
+    52                              <1> 
+    53 00000557 50                  <1>     push eax
+    54 00000558 53                  <1>     push ebx
+    55                              <1> 
+    56 00000559 B00A                <1>     mov al, 0x0A    ; レジスタA
+    57 0000055B E670                <1>     out 0x70, al
+    58 0000055D E471                <1>     in al, 0x71
+    59 0000055F A880                <1>     test al, 0x80   ; if(!更新中) goto .10F
+    60 00000561 7407                <1>     je .10F
+    61 00000563 B801000000          <1>     mov eax, 1      ; 更新中は失敗
+    62 00000568 EB27                <1>     jmp .10E
+    63                              <1> .10F:
+    64                              <1> 
+    65 0000056A B004                <1>     mov al, 0x04    ; 時
+    66 0000056C E670                <1>     out 0x70, al    ; レジスタ設定
+    67 0000056E E471                <1>     in al, 0x71     ; 時刻読み込み
+    68                              <1> 
+    69 00000570 C1E008              <1>     shl eax, 8      ; alをahに退避
+    70                              <1> 
+    71 00000573 B002                <1>     mov al, 0x02    ; 分
+    72 00000575 E670                <1>     out 0x70, al    ; レジスタ設定
+    73 00000577 E471                <1>     in al, 0x71     ; 時刻読み込み
+    74                              <1> 
+    75 00000579 C1E008              <1>     shl eax, 8      ; alをahに退避
+    76                              <1> 
+    77 0000057C B000                <1>     mov al, 0x00    ; 秒
+    78 0000057E E670                <1>     out 0x70, al    ; レジスタ設定
+    79 00000580 E471                <1>     in al, 0x71     ; 時刻読み込み
+    80                              <1> 
+    81 00000582 25FFFFFF00          <1>     and eax, 0x00_FF_FF_FF  ; 時:分:秒のみ有効
+    82                              <1> 
+    83 00000587 8B5D08              <1>     mov ebx, [ebp + 8]
+    84 0000058A 8903                <1>     mov [ebx], eax  ; [dst] = 時刻
+    85                              <1> 
+    86 0000058C B800000000          <1>     mov eax, 0
+    87                              <1> .10E:
+    88                              <1> 
+    89 00000591 5B                  <1>     pop ebx
+    90 00000592 58                  <1>     pop eax
+    91                              <1> 
+    92 00000593 89EC                <1>     mov esp, ebp
+    93 00000595 5D                  <1>     pop ebp
+    94                              <1> 
+    95 00000596 C3                  <1>     ret
+    47                                  %include "../modules/protect/draw_time.s"
+    48                              <1> draw_time:  ; void draw_time(col, row, color, time);
+    49                              <1> ; time 時刻データ
+    50 00000597 55                  <1>     push ebp
+    51 00000598 89E5                <1>     mov ebp, esp
+    52                              <1> 
+    53 0000059A 50                  <1>     push eax
+    54 0000059B 53                  <1>     push ebx
+    55                              <1>     
+    56 0000059C 8B4514              <1>     mov eax, [ebp +20]  ; 時:分:秒
+    57                              <1> 
+    58 0000059F 0FB6D8              <1>     movzx ebx, al       ; 秒だけ
+    59 000005A2 6A046A106A0268-     <1>     cdecl itoa, ebx, .sec, 2, 16, 0b0100
+    59 000005A9 [09060000]53E819FF- <1>
+    59 000005B1 FFFF6683C414        <1>
+    60                              <1> 
+    61 000005B7 88E3                <1>     mov bl, ah          ; 分だけ
+    62 000005B9 6A046A106A0268-     <1>     cdecl itoa, ebx, .min, 2, 16, 0b0100
+    62 000005C0 [06060000]53E802FF- <1>
+    62 000005C8 FFFF6683C414        <1>
+    63                              <1>     
+    64 000005CE C1E810              <1>     shr eax, 16         ; 時だけ
+    65 000005D1 6A046A106A0268-     <1>     cdecl itoa, eax, .hour, 2, 16, 0b0100
+    65 000005D8 [03060000]50E8EAFE- <1>
+    65 000005E0 FFFF6683C414        <1>
+    66                              <1> 
+    67 000005E6 68[03060000]FF7510- <1>     cdecl draw_str, dword [ebp + 8], dword [ebp +12], dword [ebp +16], .hour ; 文字の表示
+    67 000005EE FF750CFF7508E835FC- <1>
+    67 000005F7 FFFF6683C410        <1>
+    68                              <1> 
+    69 000005FD 5B                  <1>     pop ebx
+    70 000005FE 58                  <1>     pop eax
+    71                              <1> 
+    72 000005FF 89EC                <1>     mov esp, ebp
+    73 00000601 5D                  <1>     pop ebp
+    74                              <1> 
+    75 00000602 C3                  <1>     ret
+    76                              <1> 
+    77 00000603 5A5A3A              <1> .hour: db "ZZ:"
+    78 00000606 5A5A3A              <1> .min:  db "ZZ:"
+    79 00000609 5A5A00              <1> .sec:  db "ZZ", 0
+    48                                  %include "modules/interrupt.s"
+    49                              <1> int_stop:
+    50                              <1>     ; EAXで示される文字列を表示
+    51 0000060C 50680F0600006A0F6A- <1>     cdecl draw_str, 25, 15, 0x060F, eax
+    51 00000615 19E813FCFFFF6683C4- <1>
+    51 0000061E 10                  <1>
+    52                              <1> 
+    53                              <1>     ; スタックのデータを文字列に変換
+    54 0000061F 8B0424              <1>     mov eax, [esp + 0]
+    55 00000622 6A046A106A0868-     <1>     cdecl itoa, eax, .p1, 8, 16, 0b0100
+    55 00000629 [E7060000]50E899FE- <1>
+    55 00000631 FFFF6683C414        <1>
+    56                              <1> 
+    57 00000637 8B442404            <1>     mov eax, [esp + 4]
+    58 0000063B 6A046A106A0868-     <1>     cdecl itoa, eax, .p2, 8, 16, 0b0100
+    58 00000642 [F8060000]50E880FE- <1>
+    58 0000064A FFFF6683C414        <1>
+    59                              <1> 
+    60 00000650 8B442408            <1>     mov eax, [esp + 8]
+    61 00000654 6A046A106A0868-     <1>     cdecl itoa, eax, .p3, 8, 16, 0b0100
+    61 0000065B [09070000]50E867FE- <1>
+    61 00000663 FFFF6683C414        <1>
+    62                              <1> 
+    63 00000669 8B44240C            <1>     mov eax, [esp +12]
+    64 0000066D 6A046A106A0868-     <1>     cdecl itoa, eax, .p4, 8, 16, 0b0100
+    64 00000674 [1A070000]50E84EFE- <1>
+    64 0000067C FFFF6683C414        <1>
+    65                              <1> 
+    66                              <1>     ; 文字列の表示
+    67 00000682 68[E0060000]68040F- <1>     cdecl draw_str, 25, 16, 0x0F04, .s1
+    67 0000068A 00006A106A19E899FB- <1>
+    67 00000693 FFFF6683C410        <1>
+    68 00000699 68[F1060000]68040F- <1>     cdecl draw_str, 25, 17, 0x0F04, .s2
+    68 000006A1 00006A116A19E882FB- <1>
+    68 000006AA FFFF6683C410        <1>
+    69 000006B0 68[02070000]68040F- <1>     cdecl draw_str, 25, 18, 0x0F04, .s3
+    69 000006B8 00006A126A19E86BFB- <1>
+    69 000006C1 FFFF6683C410        <1>
+    70 000006C7 68[13070000]68040F- <1>     cdecl draw_str, 25, 19, 0x0F04, .s4
+    70 000006CF 00006A136A19E854FB- <1>
+    70 000006D8 FFFF6683C410        <1>
+    71                              <1> 
+    72                              <1>     ; 無限ループ
+    73 000006DE EBFE                <1>     jmp $
+    74                              <1> 
+    75 000006E0 4553502B20303A      <1> .s1 db "ESP+ 0:"
+    76 000006E7 5F5F5F5F5F5F5F5F20- <1> .p1 db "________ ", 0
+    76 000006F0 00                  <1>
+    77 000006F1 2020202B20343A      <1> .s2 db "   + 4:"
+    78 000006F8 5F5F5F5F5F5F5F5F20- <1> .p2 db "________ ", 0
+    78 00000701 00                  <1>
+    79 00000702 2020202B20383A      <1> .s3 db "   + 8:"
+    80 00000709 5F5F5F5F5F5F5F5F20- <1> .p3 db "________ ", 0
+    80 00000712 00                  <1>
+    81 00000713 2020202B31323A      <1> .s4 db "   +12:"
+    82 0000071A 5F5F5F5F5F5F5F5F20- <1> .p4 db "________ ", 0
+    82 00000723 00                  <1>
+    83                              <1> 
+    84                              <1> int_default:
+    85 00000724 9C                  <1>     pushf
+    86 00000725 0E                  <1>     push cs
+    87 00000726 68[0C060000]        <1>     push int_stop
+    88                              <1> 
+    89 0000072B B8[31070000]        <1>     mov eax, .s0
+    90 00000730 CF                  <1>     iret
+    91                              <1> 
+    92 00000731 203C2020202053544F- <1> .s0 db " <    STOP    > ", 0
+    92 0000073A 50202020203E2000    <1>
+    49                                  
+    50                                  ;パディング
+    51 00000742 00<rep 18BEh>               times KERNEL_SIZE - ($ - $$) db 0
+    52                                  
