@@ -20,3 +20,23 @@ struc drive
     .head resw 1    ; ヘッド
     .sect resw 1    ; セクタ
 endstruc
+
+%macro set_vect 1-*
+        push eax
+        push edi
+
+        mov edi, VECT_BASE + (%1 * 8)   ; ベクタアドレス
+        mov eax, %2
+
+    %if 3 == %0
+        mov [edi + 4], %3               ; フラグ
+    %endif
+
+        mov [edi + 0], ax       ; 例外アドレス[15: 0]
+        shr eax, 16
+        mov [edi + 6], ax       ; 例外アドレス[31:16]
+
+        pop edi
+        pop eax
+%endmacro
+
