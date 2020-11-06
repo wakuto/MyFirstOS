@@ -44,3 +44,12 @@ endstruc
     mov al, %2
     out %1, al
 %endmacro
+
+%define RING_ITEM_SIZE (1 << 4)
+%define RING_INDEX_MASK (RING_ITEM_SIZE - 1)
+
+struc ring_buff
+    .rp resd 1                  ; RP:書き込み位置
+    .wp resd 1                  ; WP:読み込み位置
+    .item resb RING_ITEM_SIZE   ; バッファ
+endstruc
