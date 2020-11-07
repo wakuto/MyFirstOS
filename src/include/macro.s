@@ -53,3 +53,23 @@ struc ring_buff
     .wp resd 1                  ; WP:読み込み位置
     .item resb RING_ITEM_SIZE   ; バッファ
 endstruc
+
+%macro set_desc 2-*
+        push eax
+        push edi
+
+        mov edi, %1     ; ディスクリプタアドレス
+        mov eax, %2     ; ベースアドレス
+
+    %if 3 == %0
+        mov [edi + 0], %3   ; リミット
+    %endif
+
+        mov [edi + 2], ax   ; ベース([15: 0])
+        shr eax, 16
+        mov [edi + 4], al   ; ベース([23:16])
+        mov [edi + 7], ah   ; ベース([31:24])
+
+        pop edi
+        pop eax
+%endmacro
