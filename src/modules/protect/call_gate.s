@@ -7,7 +7,7 @@ call_gate:
     push es
 
     ; データ用セグメントの設定
-    mov ax, 0010
+    mov ax, 0x0010
     mov ds, ax
     mov es, ax
 
@@ -24,5 +24,6 @@ call_gate:
 
     mov esp, ebp
     pop ebp
+
     ; コードセグメントセレクタの復帰と終了
     retf 4 * 4  ; 4byte * 4引数分スタックの調整

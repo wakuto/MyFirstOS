@@ -78,12 +78,12 @@ endstruc
     push eax
     push edi
 
-    mov edi, %1
-    mov eax, %2
+    mov edi, %1         ; ディスクリプタアドレス
+    mov eax, %2         ; ベースアドレス
 
-    mov [edi + 0], ax
+    mov [edi + 0], ax   ; ベース([15: 0])
     shr eax, 16
-    mov [edi + 6], ax
+    mov [edi + 6], ax   ; ベース([31:16])
 
     pop edi
     pop eax

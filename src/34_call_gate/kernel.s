@@ -117,6 +117,7 @@ RTC_TIME: dd 0
 %include "../modules/protect/ring_buff.s"
 %include "../modules/protect/timer.s"
 %include "../modules/protect/draw_rotation_bar.s"
+%include "../modules/protect/call_gate.s"
 
 ;パディング
     times KERNEL_SIZE - ($ - $$) db 0
