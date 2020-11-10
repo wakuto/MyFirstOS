@@ -87,9 +87,18 @@ draw_line:  ; void draw_line(X0, Y0, X1, Y1, color);
     ; 線を描画
 .50L:
 
+%ifdef USE_SYSTEM_CALL
+    mov eax, ecx
+    mov ecx, [ebp - 8]
+    mov edx, [ebp -20]
+    mov ebx, [ebp +24]
+    int 0x82            ; sys_call()
+    mov ecx, eax
+%else
     cdecl draw_pixel, dword [ebp - 8], \
                       dword [ebp -20], \
                       dword [ebp +24]
+%endif
 
     ; 座標更新
 
@@ -123,19 +132,7 @@ draw_line:  ; void draw_line(X0, Y0, X1, Y1, color);
     pop ecx
     pop ebx
     pop eax
-    ; espはebp-28?
 
-    ; ↓これいらないの？
-    ; pop (tmp_reg)
-    ; pop (tmp_reg)
-    ; pop (tmp_reg)
-    ; pop (tmp_reg)
-    ; pop (tmp_reg)
-    ; pop (tmp_reg)
-    ; pop (tmp_reg)
-    ; もしくはsub esp, 56とか？
-
-    ; espはebp?
     mov esp, ebp
     pop ebp
 
