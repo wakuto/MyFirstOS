@@ -11,6 +11,10 @@ draw_char:      ; void draw_char(col, row, color, ch);
     push esi
     push edi
 
+%ifdef USE_TEST_AND_SET
+    cdecl test_and_set, IN_USE  ; リソースが開くのを待つ
+%endif
+
     ; コピー元フォントアドレスを設定
     movzx esi, byte [ebp +20]  ; esi = ch
     shl esi, 4                  ; ch * 16   1文字16バイト
@@ -47,6 +51,10 @@ draw_char:      ; void draw_char(col, row, color, ch);
     cdecl vga_set_write_plane, 0x01     ; 青プレーン
     cdecl vram_font_copy, esi, edi, 0x01, ebx
 
+%ifdef USE_TEST_AND_SET
+    mov [IN_USE], dword 0   ; 変数のクリア
+%endif
+
     pop edi
     pop esi
     pop ebx
@@ -55,3 +63,6 @@ draw_char:      ; void draw_char(col, row, color, ch);
     pop ebp
 
     ret
+
+ALIGN 4, db 0
+IN_USE:  dd 0
