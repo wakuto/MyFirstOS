@@ -88,3 +88,23 @@ endstruc
     pop edi
     pop eax
 %endmacro
+
+struc rose
+    .x0         resd 1      ; 左上座標
+    .y0         resd 1      ; 
+    .x1         resd 1      ; 右下座標
+    .y1         resd 1      ;
+
+    .n          resd 1      ; 変数n
+    .d          resd 1      ; 変数d
+
+    ;描画色
+    .color_x    resd 1      ; x軸
+    .color_y    resd 1      ; y軸
+    .color_z    resd 1      ; 枠
+    .color_s    resd 1      ; 文字
+    .color_f    resd 1      ; グラフ描画
+    .color_b    resd 1      ; グラフ消去
+
+    .title      resb 16     ; タイトル
+endstruc
