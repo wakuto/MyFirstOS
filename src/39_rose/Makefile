@@ -14,7 +14,7 @@ run:
 	bochsdbg -q -f ../../env/bochsrc.bxrc -rc ../../env/cmd.init
 
 dbg:
-	qemu-system-x86_64 boot.img stdio -s -S
+	qemu-system-x86_64 boot.img -s -S
 
 clean:
 	$(RM) *.img
