@@ -3,8 +3,8 @@ vga_set_read_plane:     ; void vga_set_read_plane(plane);
     push ebp
     mov ebp, esp
 
-    push ax
-    push dx
+    push eax
+    push edx
 
 
     ; 読み込みプレーンの選択
@@ -14,8 +14,8 @@ vga_set_read_plane:     ; void vga_set_read_plane(plane);
     mov dx, 0x03CE      ; グラフィックス制御ポート
     out dx, ax
 
-    pop dx
-    pop ax
+    pop edx
+    pop eax
 
     mov esp, ebp
     pop ebp
@@ -131,7 +131,6 @@ vram_bit_copy:         ; void vram_bit_copy(bit, vram, plane, color);
     
     push eax
     push ebx
-    push edx
     push edi
 
     mov edi, [ebp + 12]         ; vram
@@ -156,7 +155,6 @@ vram_bit_copy:         ; void vram_bit_copy(bit, vram, plane, color);
     
 
     pop edi
-    pop edx
     pop ebx
     pop eax
 

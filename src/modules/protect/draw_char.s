@@ -7,7 +7,10 @@ draw_char:      ; void draw_char(col, row, color, ch);
     push ebp
     mov ebp, esp
 
+    push eax
     push ebx
+    push ecx
+    push edx
     push esi
     push edi
 
@@ -55,14 +58,19 @@ draw_char:      ; void draw_char(col, row, color, ch);
     mov [IN_USE], dword 0   ; 変数のクリア
 %endif
 
-    pop edi
-    pop esi
-    pop ebx
+	pop		edi
+	pop		esi
+	pop		edx
+	pop		ecx
+	pop		ebx
+	pop		eax
 
     mov esp, ebp
     pop ebp
 
     ret
 
+%ifdef USE_TEST_AND_SET
 ALIGN 4, db 0
 IN_USE:  dd 0
+%endif

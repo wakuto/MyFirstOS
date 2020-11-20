@@ -32,6 +32,10 @@ draw_pixel:     ; void draw_pixel(x, y, color);
 
     mov ecx, [ebp +16]
 
+%ifdef	USE_TEST_AND_SET
+	cdecl	test_and_set, IN_USE			    ; TEST_AND_SET(IN_USE); // リソースの空き待ち
+%endif
+
     ; プレーンごとに出力
     cdecl vga_set_read_plane, 0x03              ; 輝度（I）プレーンを選択
     cdecl vga_set_write_plane, 0x08             ; 輝度（I）プレーンを選択
@@ -48,6 +52,10 @@ draw_pixel:     ; void draw_pixel(x, y, color);
     cdecl vga_set_read_plane, 0x00              ; Bプレーンを選択
     cdecl vga_set_write_plane, 0x01             ; Bプレーンを選択
     cdecl vram_bit_copy, ebx, edi, 0x01, ecx 
+
+%ifdef	USE_TEST_AND_SET
+	mov		[IN_USE], dword 0				    ; 変数のクリア
+%endif
 
     pop edi
     pop ecx
