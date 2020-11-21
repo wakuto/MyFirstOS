@@ -150,7 +150,7 @@ DRAW_PARAM:
         at rose.color_z,    dd 0x00F
         at rose.color_s,    dd 0x30F
         at rose.color_f,    dd 0x00F
-        at rose.color_b,    dd 0x003
+        at rose.color_b,    dd 0x004
 
         at rose.title,      db "Task-4", 0
     iend
@@ -169,7 +169,7 @@ DRAW_PARAM:
         at rose.color_z,    dd 0x00F
         at rose.color_s,    dd 0x30F
         at rose.color_f,    dd 0x00F
-        at rose.color_b,    dd 0x003
+        at rose.color_b,    dd 0x005
 
         at rose.title,      db "Task-5", 0
     iend
@@ -188,7 +188,7 @@ DRAW_PARAM:
         at rose.color_z,    dd 0x00F
         at rose.color_s,    dd 0x30F
         at rose.color_f,    dd 0x00F
-        at rose.color_b,    dd 0x003
+        at rose.color_b,    dd 0x006
 
         at rose.title,      db "Task-6", 0
     iend

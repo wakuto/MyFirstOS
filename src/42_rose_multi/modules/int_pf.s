@@ -1,5 +1,4 @@
 int_pf:
-    xchg bx, bx
     push ebp
     mov ebp, esp
 

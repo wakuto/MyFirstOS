@@ -6,7 +6,6 @@ ring_rd:        ; int ring_rd(buff, data);
     push ebp
     mov ebp, esp
 
-    push eax
     push ebx
     push esi
     push edi
@@ -35,7 +34,6 @@ ring_rd:        ; int ring_rd(buff, data);
     pop edi
     pop esi
     pop ebx
-    pop eax
 
     mov esp, ebp
     pop ebp
@@ -50,7 +48,6 @@ ring_wr:    ; int ring_wr(buff, data);
     push ebp
     mov ebp, esp
 
-    push eax
     push ebx
     push ecx
     push esi
@@ -78,7 +75,6 @@ ring_wr:    ; int ring_wr(buff, data);
     pop esi
     pop ecx
     pop ebx
-    pop eax
 
     mov esp, ebp
     pop ebp

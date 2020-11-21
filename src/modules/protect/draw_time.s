@@ -7,6 +7,9 @@ draw_time:  ; void draw_time(col, row, color, time);
     push ebx
     
     mov eax, [ebp +20]  ; 時:分:秒
+    cmp eax, [.last]
+    je .10E
+    mov [.last], eax
 
     movzx ebx, al       ; 秒だけ
     cdecl itoa, ebx, .sec, 2, 16, 0b0100
@@ -19,6 +22,8 @@ draw_time:  ; void draw_time(col, row, color, time);
 
     cdecl draw_str, dword [ebp + 8], dword [ebp +12], dword [ebp +16], .hour ; 文字の表示
 
+.10E:
+
     pop ebx
     pop eax
 
@@ -30,3 +35,4 @@ draw_time:  ; void draw_time(col, row, color, time);
 .hour: db "ZZ:"
 .min:  db "ZZ:"
 .sec:  db "ZZ", 0
+.last: dq 0
