@@ -10,7 +10,7 @@ memcmp:     ; int memcmp(src0, src1, size);
 
     cld
     mov edi, [ebp + 8]
-    mov dsi, [ebp + 12]
+    mov esi, [ebp + 12]
     mov ecx, [ebp + 16]
 
     repe cmpsb

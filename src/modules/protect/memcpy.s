@@ -7,8 +7,8 @@ memcpy:     ; void memcpy(src, dest, size);
     push edi
 
     cld     ; clear direction flag
-    mov esi, [ebp + 8]    ; src
-    mov edi, [ebp + 12]    ; dest
+    mov edi, [ebp + 8]     ; src
+    mov esi, [ebp + 12]    ; dest
     mov ecx, [ebp + 16]    ; size
 
     rep movsb

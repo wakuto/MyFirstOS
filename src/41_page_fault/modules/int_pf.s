@@ -8,9 +8,9 @@ int_pf:
     push es
 
     ; データ用セグメントセレクタの設定
-    mov		ax, 0x0010
-    mov		ds, ax
-    mov		es, ax
+    mov ax, 0x0010
+    mov ds, ax
+    mov es, ax
 
     ; 例外を生成したアドレスの確認
     mov eax, cr2            ; ページフォルトの際アクセスしようとしたアドレス
