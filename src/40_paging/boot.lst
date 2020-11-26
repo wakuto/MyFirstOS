@@ -146,8 +146,40 @@
     36                              <1>     SP_TASK_1 equ STACK_BASE + (STACK_SIZE * 2)
     37                              <1>     SP_TASK_2 equ STACK_BASE + (STACK_SIZE * 3)
     38                              <1>     SP_TASK_3 equ STACK_BASE + (STACK_SIZE * 4)
-    39                              <1> 
-    40                              <1>     CR3_BASE equ 0x0010_5000    ; ページ変換テーブル タスク3用
+    39                              <1>     SP_TASK_4 equ STACK_BASE + (STACK_SIZE * 5)
+    40                              <1>     SP_TASK_5 equ STACK_BASE + (STACK_SIZE * 6)
+    41                              <1>     SP_TASK_6 equ STACK_BASE + (STACK_SIZE * 7)
+    42                              <1> 
+    43                              <1>     PARAM_TASK_4 equ 0x0010_8000            ; 描画パラメータ：タスク4用
+    44                              <1>     PARAM_TASK_5 equ 0x0010_9000            ; 描画パラメータ：タスク5用
+    45                              <1>     PARAM_TASK_6 equ 0x0010_A000            ; 描画パラメータ：タスク6用
+    46                              <1> 
+    47                              <1>     CR3_BASE equ 0x0010_5000    ; ページ変換テーブル タスク3用
+    48                              <1> 
+    49                              <1>     CR3_TASK_4 equ 0x0020_0000  ; ページ変換テーブル タスク4用
+    50                              <1>     CR3_TASK_5 equ 0x0020_2000  ; ページ変換テーブル タスク5用
+    51                              <1>     CR3_TASK_6 equ 0x0020_4000  ; ページ変換テーブル タスク6用
+    52                              <1> 
+    53                              <1> 
+    54                              <1>     FAT_SIZE equ (1024 * 128)   ; FAT-1/2
+    55                              <1>     ROOT_SIZE equ (1024 *  16)  ; ルートディレクトリ領域
+    56                              <1> 
+    57                              <1>     ENTRY_SIZE equ 32           ; エントリサイズ
+    58                              <1> 
+    59                              <1>     ; BOOT イメージは異なるファイルなので、FAT アドレスの定義には加算しない
+    60                              <1>     FAT_OFFSET equ (BOOT_SIZE + KERNEL_SIZE)
+    61                              <1>     FAT1_START equ (KERNEL_SIZE)
+    62                              <1>     FAT2_START equ (FAT1_START + FAT_SIZE)
+    63                              <1>     ROOT_START equ (FAT2_START + FAT_SIZE)
+    64                              <1>     FILE_START equ (ROOT_START + ROOT_SIZE)
+    65                              <1> 
+    66                              <1>     ; ファイル属性
+    67                              <1>     ATTR_READ_ONLY equ 0x01
+    68                              <1>     ATTR_HIDDEN equ 0x02
+    69                              <1>     ATTR_SYSTEM equ 0x04
+    70                              <1>     ATTR_VOLUME_ID equ 0x08
+    71                              <1>     ATTR_DIRECTORY equ 0x10
+    72                              <1>     ATTR_ARCHIVE equ 0x20
     15                                  
     16                                      ORG BOOT_LOAD           ; ロードアドレスをアセンブラに指示
     17                                  

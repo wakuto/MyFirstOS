@@ -85,13 +85,7 @@ draw_key:
     push ebp
     mov ebp, esp
 
-    push eax
-    push ebx
-    push ecx
-    push edx
-    push esi
-    push edi
-
+    pusha
 
     mov edx, [ebp + 8]  ; edx = x列
     mov edi, [ebp +12]  ; edi = y行
@@ -107,19 +101,14 @@ draw_key:
     and ebx, RING_INDEX_MASK    ; サイズの制限
     mov al, [esi + ebx]         ; バッファ取り出し
 
-    cdecl itoa, eax, .tmp, 2, 16, 0x0100    ; キーコード->文字列
+    cdecl itoa, eax, .tmp, 2, 16, 0b0100    ; キーコード->文字列
     cdecl draw_str, edx, edi, 0x02, .tmp    ; 文字列表示
 
     add edx, 3  ; 表示位置更新
     loop .10L
 .10E:
 
-    pop edi
-    pop esi
-    pop edx
-    pop ecx
-    pop ebx
-    pop eax
+    popa
 
     mov esp, ebp
     pop ebp

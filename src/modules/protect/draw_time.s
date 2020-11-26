@@ -32,6 +32,7 @@ draw_time:  ; void draw_time(col, row, color, time);
 
     ret
 
+ALIGN 2, db 0
 .hour: db "ZZ:"
 .min:  db "ZZ:"
 .sec:  db "ZZ", 0

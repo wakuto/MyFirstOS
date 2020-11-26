@@ -39,6 +39,27 @@
     39                              <1>     CR3_TASK_4 equ 0x0020_0000  ; ページ変換テーブル タスク4用
     40                              <1>     CR3_TASK_5 equ 0x0020_2000  ; ページ変換テーブル タスク5用
     41                              <1>     CR3_TASK_6 equ 0x0020_4000  ; ページ変換テーブル タスク6用
+    42                              <1> 
+    43                              <1> 
+    44                              <1>     FAT_SIZE equ (1024 * 128)   ; FAT-1/2
+    45                              <1>     ROOT_SIZE equ (1024 *  16)  ; ルートディレクトリ領域
+    46                              <1> 
+    47                              <1>     ENTRY_SIZE equ 32           ; エントリサイズ
+    48                              <1> 
+    49                              <1>     ; BOOT イメージは異なるファイルなので、FAT アドレスの定義には加算しない
+    50                              <1>     FAT_OFFSET equ (BOOT_SIZE + KERNEL_SIZE)
+    51                              <1>     FAT1_START equ (KERNEL_SIZE)
+    52                              <1>     FAT2_START equ (FAT1_START + FAT_SIZE)
+    53                              <1>     ROOT_START equ (FAT2_START + FAT_SIZE)
+    54                              <1>     FILE_START equ (ROOT_START + ROOT_SIZE)
+    55                              <1> 
+    56                              <1>     ; ファイル属性
+    57                              <1>     ATTR_READ_ONLY equ 0x01
+    58                              <1>     ATTR_HIDDEN equ 0x02
+    59                              <1>     ATTR_SYSTEM equ 0x04
+    60                              <1>     ATTR_VOLUME_ID equ 0x08
+    61                              <1>     ATTR_DIRECTORY equ 0x10
+    62                              <1>     ATTR_ARCHIVE equ 0x20
      5                                  %include "../include/macro.s"
      6                              <1> ; C言語と同等の関数呼び出し
      7                              <1> %macro cdecl 1-*.nolist ; 可変引数, リスト出力の抑止
